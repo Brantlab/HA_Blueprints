@@ -1,21 +1,20 @@
 blueprint:
-  name: IKEA MYGGBETT (Door/Window) – Open/Close Actions + Left Open Reminder
+  name: IKEA MYGGBETT (Door/Window) – Open/Close Actions + Left Open Reminder (Fixed)
   description: >
-    Run actions when a door/window contact sensor opens or closes, with optional delay
+    Run actions when a door/window contact sensor opens or closes, with optional open delay
     and an optional reminder if it stays open.
     Works with IKEA MYGGBETT and any binary_sensor contact.
   domain: automation
   input:
     contact_sensor:
       name: Door/Window Sensor
-      description: Select the contact sensor entity (binary_sensor) for the door/window.
       selector:
         entity:
           domain: binary_sensor
 
     open_delay:
       name: Open delay (seconds)
-      description: Optional. Sensor must remain open for this many seconds before "open" actions run.
+      description: Sensor must remain open for this many seconds before "open" actions run.
       default: 0
       selector:
         number:
@@ -27,14 +26,12 @@ blueprint:
 
     open_actions:
       name: Actions when opened
-      description: Actions to run after the sensor opens (and after open delay, if set).
       default: []
       selector:
         action: {}
 
     close_actions:
       name: Actions when closed
-      description: Actions to run when the sensor closes.
       default: []
       selector:
         action: {}
@@ -58,7 +55,6 @@ blueprint:
 
     left_open_actions:
       name: Reminder actions
-      description: Actions to run if the sensor stays open for the configured minutes.
       default: []
       selector:
         action: {}
@@ -66,52 +62,45 @@ blueprint:
 mode: restart
 
 trigger:
+  # Opened (optionally delayed by "for")
   - platform: state
     entity_id: !input contact_sensor
     to: "on"
+    for:
+      seconds: !input open_delay
     id: opened
 
+  # Closed
   - platform: state
     entity_id: !input contact_sensor
     to: "off"
     id: closed
 
+  # Left open reminder trigger (fires only if it stays open)
+  - platform: state
+    entity_id: !input contact_sensor
+    to: "on"
+    for:
+      minutes: !input left_open_for
+    id: left_open
+
+condition: []
+
 action:
   - choose:
-      # OPENED
       - conditions:
           - condition: trigger
             id: opened
-        sequence:
-          - choose:
-              - conditions:
-                  - condition: template
-                    value_template: "{{ ( !input open_delay | int ) > 0 }}"
-                sequence:
-                  - delay:
-                      seconds: !input open_delay
-                  # Only run if still open after delay
-                  - condition: state
-                    entity_id: !input contact_sensor
-                    state: "on"
-          - sequence: !input open_actions
+        sequence: !input open_actions
 
-          # Optional left-open reminder (runs after the open actions)
-          - choose:
-              - conditions:
-                  - condition: template
-                    value_template: "{{ !input left_open_enabled }}"
-                sequence:
-                  - delay:
-                      minutes: !input left_open_for
-                  - condition: state
-                    entity_id: !input contact_sensor
-                    state: "on"
-                  - sequence: !input left_open_actions
-
-      # CLOSED
       - conditions:
           - condition: trigger
             id: closed
-        sequence:
-          - sequence: !input close_actions
+        sequence: !input close_actions
+
+      - conditions:
+          - condition: trigger
+            id: left_open
+          - condition: template
+            value_template: "{{ is_state('input_boolean.dummy', 'on') }}"
+        sequence: !input left_open_actions
